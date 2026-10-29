@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  QC
+  LC
+  CD
+}
+
+enum DistrictCode {
+  A
+  E
+  W
+  X
+  Z
+}
+
+enum ReservationStatus {
+  ACTIVE
+  RETURNED
+  CANCELLED
+}
+
+enum TransferStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RouteType {
+  DIRECT
+  TRANSIT
+  MARITIME
+  REQUISITION
+}
+
+model User {
+  id           Int    @id @default(autoincrement())
+  name         String
+  email        String @unique
+  passwordHash String
+  role         Role
+
+  districts          UserDistrict[]
+  reservations       Reservation[]
+  requestedTransfers Transfer[]         @relation("RequestedTransfers")
+  approvals          TransferApproval[] @relation("Approver")
+  events             CalendarEvent[]    @relation("EventCreator")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserDistrict {
+  id Int @id @default(autoincrement())
+
+  userId     Int
+  districtId Int
+
+  user     User     @relation(fields: [userId], references: [id])
+  district District @relation(fields: [districtId], references: [id])
+
+  @@unique([userId, districtId])
+}
+
+model District {
+  id            Int          @id @default(autoincrement())
+  code          DistrictCode @unique
+  name          String       @unique
+  seaAccess     Boolean      @default(false)
+  severityLevel Int          @default(1)
+
+  users  UserDistrict[]
+  stocks ResourceStock[]
+
+  adjacencyFrom DistrictAdjacency[] @relation("AdjacencyFrom")
+  adjacencyTo   DistrictAdjacency[] @relation("AdjacencyTo")
+
+  transfersFrom Transfer[] @relation("TransferSource")
+  transfersTo   Transfer[] @relation("TransferDestination")
+
+  approvals TransferApproval[]
+  events    CalendarEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DistrictAdjacency {
+  id Int @id @default(autoincrement())
+
+  districtAId Int
+  districtBId Int
+
+  districtA District @relation("AdjacencyFrom", fields: [districtAId], references: [id])
+  districtB District @relation("AdjacencyTo", fields: [districtBId], references: [id])
+
+  @@unique([districtAId, districtBId])
+}
+
+model ResourceType {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  stocks    ResourceStock[]
+  transfers Transfer[]
+}
+
+model ResourceStock {
+  id Int @id @default(autoincrement())
+
+  districtId     Int
+  resourceTypeId Int
+
+  initialQuantity Int
+  currentQuantity Int
+
+  district     District     @relation(fields: [districtId], references: [id])
+  resourceType ResourceType @relation(fields: [resourceTypeId], references: [id])
+
+  reservations Reservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([districtId, resourceTypeId])
+}
+
+model Reservation {
+  id Int @id @default(autoincrement())
+
+  quantity Int
+  status   ReservationStatus @default(ACTIVE)
+
+  userId          Int
+  resourceStockId Int
+
+  user          User          @relation(fields: [userId], references: [id])
+  resourceStock ResourceStock @relation(fields: [resourceStockId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  returnedAt DateTime?
+}
+
+model Transfer {
+  id Int @id @default(autoincrement())
+
+  sourceDistrictId      Int
+  destinationDistrictId Int
+  resourceTypeId        Int
+  requestedById         Int
+
+  quantity Int
+
+  routeType RouteType
+  status    TransferStatus @default(PENDING)
+
+  sourceDistrict      District     @relation("TransferSource", fields: [sourceDistrictId], references: [id])
+  destinationDistrict District     @relation("TransferDestination", fields: [destinationDistrictId], references: [id])
+  resourceType        ResourceType @relation(fields: [resourceTypeId], references: [id])
+  requestedBy         User         @relation("RequestedTransfers", fields: [requestedById], references: [id])
+
+  approvals TransferApproval[]
+
+  createdAt   DateTime  @default(now())
+  approvedAt  DateTime?
+  completedAt DateTime?
+}
+
+model TransferApproval {
+  id Int @id @default(autoincrement())
+
+  transferId Int
+  districtId Int
+  approverId Int?
+
+  status   ApprovalStatus @default(PENDING)
+  sequence Int            @default(1)
+
+  transfer Transfer @relation(fields: [transferId], references: [id])
+  district District @relation(fields: [districtId], references: [id])
+  approver User?    @relation("Approver", fields: [approverId], references: [id])
+
+  approvedAt DateTime?
+
+  @@unique([transferId, districtId])
+}
+
+model DisasterState {
+  key String @id @default("GLOBAL")
+
+  level            Int @default(1)
+  retentionPercent Int @default(30)
+
+  updatedAt DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id Int @id @default(autoincrement())
+
+  title       String
+  description String?
+
+  startAt DateTime
+  endAt   DateTime?
+
+  districtId  Int?
+  createdById Int
+
+  district  District? @relation(fields: [districtId], references: [id])
+  createdBy User      @relation("EventCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
